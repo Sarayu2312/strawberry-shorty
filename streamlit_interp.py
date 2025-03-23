@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import ollama
 import json
+import subprocess
+import os
+import tempfile
 
 def query_ollama(model: str, conversation: list):
     """Sends a request to Ollama and returns the response using the Python client."""
@@ -9,9 +12,6 @@ def query_ollama(model: str, conversation: list):
         # Call the Ollama chat method
         response = ollama.chat(model=model, messages=conversation).model_dump()
         print(response)
-        
-        # Print for debugging
-        # print(f"Response received: {response.keys() if hasattr(response, 'keys') else type(response)}")
         
         # Return the response text
         if isinstance(response, dict):
@@ -26,8 +26,6 @@ def query_ollama(model: str, conversation: list):
 if 'history' not in st.session_state:
     st.session_state.history = []
     st.session_state.conv_history = []
-
-# Optional: Add a status indicator for Ollama service
 
 # Try to list available models to check if Ollama is running
 models = ollama.list().model_dump()
@@ -48,7 +46,7 @@ user_input = st.text_area("Enter your prompt:")
 user_chat_input = user_input 
 
 # File uploader
-uploaded_file = st.file_uploader("Upload a file (CSV, TXT, etc.)", type=["csv", "txt", "json"])
+uploaded_file = st.file_uploader("Upload a file (CSV, TXT, etc.)", type=["csv", "txt", "json"], )
 
 # Process uploaded file
 if uploaded_file is not None:
@@ -66,9 +64,9 @@ if uploaded_file is not None:
         if st.checkbox("Include CSV data in prompt"):
             csv_string = df.to_string()  # You can change this to any subset you need
             user_chat_input = user_input
-            user_input = f"{user_input}\n\nCSV Data:\n{csv_string}"
+            user_input = f"{user_input}\n\nCSV Data:\n{csv_string}"[:10_000]
+            print(len(user_input))
 
-            
     # Handle TXT file type
     elif file_type == "txt":
         text = uploaded_file.read().decode("utf-8")
@@ -76,7 +74,7 @@ if uploaded_file is not None:
         # Option to include text file content in prompt
         if st.checkbox("Include text file content in prompt"):
             user_chat_input = user_input
-            user_input = f"{user_input}\n\nFile Content:\n{text}"
+            user_input = f"{user_input}\n\nFile Content:\n{text[:5000]}"
             
     # Handle JSON file type
     elif file_type == "json":
@@ -113,5 +111,24 @@ if st.button("Generate Conversation"):
                 st.markdown(f"**You**: {entry['message']}")
             else:
                 st.markdown(f"**Model**: {entry['message']}")
+        
+        # Check if the model's response is a Python script
+        if st.checkbox("Execute Generated Script"):
+            script_content = output
+            
+            # Save the script to a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp_file:
+                temp_file.write(script_content.encode('utf-8'))
+                temp_file_path = temp_file.name
+            
+            # Execute the script using subprocess
+            try:
+                result = subprocess.run(["python", temp_file_path], capture_output=True, text=True, check=True)
+                st.success(f"Script executed successfully:\n{result.stdout}")
+            except subprocess.CalledProcessError as e:
+                st.error(f"Error executing script:\n{e.stderr}")
+            finally:
+                # Clean up the temporary file
+                os.remove(temp_file_path)
     else:
         st.warning("Please enter a message.")
