@@ -13,7 +13,7 @@ def query_ollama(model: str, conversation: list):
     try:
         # Call the Ollama chat method
         response = ollama.chat(model=model, messages=conversation).model_dump()
-        print(response)
+        # print(response)
         
         # Return the response text
         if isinstance(response, dict):
@@ -23,6 +23,48 @@ def query_ollama(model: str, conversation: list):
     except Exception as e:
         print(f"Error calling Ollama: {str(e)}")
         return f"Error: {str(e)}"
+
+def generate_prompt(summary_stats, df):
+    # Convert summary statistics to a string
+    summary_string = summary_stats.to_string()
+    
+    # Generate a detailed prompt
+    prompt = f"""
+    You are an AI assistant tasked with analyzing environmental data. Below is a summary of the data and detailed descriptions of the visualizations that have been generated.
+
+    **Summary Statistics:**
+    ```
+    {summary_string}
+    ```
+
+    **Data Description:**
+    The dataset contains environmental measurements such as wind speed, temperature, and CO2 concentration at different heights over time. The data includes the following columns:
+    - DateTime: The timestamp of the measurement.
+    - WindSpeed_1m[m/s], WindSpeed_3m[m/s], WindSpeed_7m[m/s], WindSpeed_13m[m/s]: Wind speeds at different heights.
+    - Temp_1m[degC], Temp_3m[degC], Temp_7m[degC], Temp_13m[degC]: Temperatures at different heights.
+    - RH_1m[%]: Relative humidity at 1 meter.
+    - CO2_MNT[ppm], CO2_desert[ppm]: CO2 concentrations in different locations.
+    - AirPress_hPa: Air pressure in hPa.
+
+    **Visualizations:**
+
+    **Time-series Plot:**
+    - The time-series plot shows the wind speed and temperature at different heights over time.
+    - Wind speeds are plotted for heights of 1m, 3m, 7m, and 13m.
+    - Temperatures are plotted for heights of 1m, 3m, 7m, and 13m.
+    - CO2 concentrations are plotted for two locations: MNT and Desert.
+
+    **Correlation Heatmap:**
+    - The correlation heatmap shows the correlation between key environmental variables.
+    - Variables include wind speed at different heights, temperature at different heights, relative humidity, CO2 concentrations, and air pressure.
+    - The heatmap uses a coolwarm color scheme to indicate the strength and direction of the correlations.
+
+    **Task:**
+    Analyze the summary statistics and visualizations provided. Identify any anomalies, trends, or patterns in the data. Provide insights and potential explanations for the observed data. Do not generate any code.
+
+    **Your Analysis:**
+    """
+    return prompt
 
 # Initialize session state for conversation history if not already initialized
 if 'history' not in st.session_state:
@@ -102,12 +144,9 @@ if uploaded_file is not None:
             plt.title("Correlation Heatmap of Key Environmental Variables")
             st.pyplot(plt)
         
-        # Option to include CSV data in the prompt (show a preview if selected)
-        if st.checkbox("Include CSV summary in prompt"):
-            summary_string = summary_stats.to_string()
-            user_chat_input = user_input
-            user_input = f"{user_input}\n\nCSV Summary:\n{summary_string}"[:10_000]
-            print(len(user_input))
+        # Generate the prompt for Ollama
+        user_input = generate_prompt(summary_stats, df)
+        user_chat_input = user_input
 
     # Handle TXT file type
     elif file_type == "txt":
