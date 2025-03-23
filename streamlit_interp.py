@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 import ollama
+import json
 
 def query_ollama(model: str, prompt: str):
     """Sends a request to Ollama and returns the response using the Python client."""
     try:
         # Call the Ollama generate method
-        response = ollama.generate(model=model, prompt=prompt)
+        response = ollama.generate(model=model, prompt=prompt).model_dump()
         
         # Print for debugging
         print(f"Response received: {response.keys() if hasattr(response, 'keys') else type(response)}")
@@ -36,17 +37,19 @@ uploaded_file = st.file_uploader("Upload a file (CSV, TXT, etc.)", type=["csv", 
 if uploaded_file is not None:
     file_type = uploaded_file.name.split(".")[-1]
     
-    # Handle different file types
+    # Handle CSV file type
     if file_type == "csv":
         df = pd.read_csv(uploaded_file)
         st.write("Preview of uploaded CSV:")
-        st.dataframe(df)
+        st.dataframe(df.head())  # Show only the first 5 rows for a preview
         
         # Option to include CSV data in prompt
         if st.checkbox("Include CSV data in prompt"):
-            csv_string = df.to_string()
+            # Select a subset of data (first 10 rows for example)
+            csv_string = df.head(10).to_string()  # You can change this to any subset you need
             user_input = f"{user_input}\n\nCSV Data:\n{csv_string}"
             
+    # Handle TXT file type
     elif file_type == "txt":
         text = uploaded_file.read().decode("utf-8")
         st.write("File Contents:")
@@ -56,8 +59,8 @@ if uploaded_file is not None:
         if st.checkbox("Include text file content in prompt"):
             user_input = f"{user_input}\n\nFile Content:\n{text}"
             
+    # Handle JSON file type
     elif file_type == "json":
-        import json
         json_data = json.load(uploaded_file)
         st.json(json_data)
         
@@ -70,7 +73,7 @@ if uploaded_file is not None:
 if st.button("Generate Response"):
     if user_input.strip():
         with st.spinner("Generating response..."):
-            print(f"Querying model '{model_name}' with prompt: {user_input[:100]}...")
+            print(f"Querying model '{model_name}' with prompt: {user_input[:100]}...")  # Log the first part of the prompt
             output = query_ollama(model_name, user_input)
         
         st.subheader("Response:")
