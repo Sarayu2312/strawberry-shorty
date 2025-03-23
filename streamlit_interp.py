@@ -5,6 +5,8 @@ import json
 import subprocess
 import os
 import tempfile
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def query_ollama(model: str, conversation: list):
     """Sends a request to Ollama and returns the response using the Python client."""
@@ -60,11 +62,51 @@ if uploaded_file is not None:
     if file_type == "csv":
         df = pd.read_csv(uploaded_file)
         
+        # Convert DateTime to proper datetime format
+        if "DateTime" in df.columns:
+            df["DateTime"] = pd.to_datetime(df["DateTime"])
+        
+        # Summary statistics of numerical columns
+        summary_stats = df.describe()
+        st.subheader("Summary Statistics:")
+        st.dataframe(summary_stats)
+        
+        # Plot time-series trends for key variables
+        fig, axes = plt.subplots(3, 2, figsize=(14, 12))
+        
+        # Wind Speed at Different Heights
+        for height, ax in zip(["1m", "3m", "7m", "13m"], axes[0]):
+            if f"WindSpeed_{height}[m/s]" in df.columns:
+                df.plot(x="DateTime", y=f"WindSpeed_{height}[m/s]", ax=ax, title=f"Wind Speed at {height}")
+        
+        # Temperature at Different Heights
+        for height, ax in zip(["1m", "3m", "7m", "13m"], axes[1]):
+            if f"Temp_{height}[degC]" in df.columns:
+                df.plot(x="DateTime", y=f"Temp_{height}[degC]", ax=ax, title=f"Temperature at {height}")
+        
+        # CO2 Concentration Trends
+        if "CO2_MNT[ppm]" in df.columns:
+            df.plot(x="DateTime", y="CO2_MNT[ppm]", ax=axes[2][0], title="CO2 Concentration (MNT)")
+        if "CO2_desert[ppm]" in df.columns:
+            df.plot(x="DateTime", y="CO2_desert[ppm]", ax=axes[2][1], title="CO2 Concentration (Desert)")
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # Correlation Heatmap of Key Environmental Factors
+        plt.figure(figsize=(12, 8))
+        cols = [col for col in df.columns if col in ["WindSpeed_1m[m/s]", "Temp_1m[degC]", "RH_1m[%]", "CO2_MNT[ppm]", "CO2_desert[ppm]", "AirPress_hPa"]]
+        if cols:
+            corr_matrix = df[cols].corr()
+            sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
+            plt.title("Correlation Heatmap of Key Environmental Variables")
+            st.pyplot(plt)
+        
         # Option to include CSV data in the prompt (show a preview if selected)
-        if st.checkbox("Include CSV data in prompt"):
-            csv_string = df.to_string()  # You can change this to any subset you need
+        if st.checkbox("Include CSV summary in prompt"):
+            summary_string = summary_stats.to_string()
             user_chat_input = user_input
-            user_input = f"{user_input}\n\nCSV Data:\n{csv_string}"[:10_000]
+            user_input = f"{user_input}\n\nCSV Summary:\n{summary_string}"[:10_000]
             print(len(user_input))
 
     # Handle TXT file type
