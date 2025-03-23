@@ -3,95 +3,115 @@ import pandas as pd
 import ollama
 import json
 
-def query_ollama(model: str, prompt: str):
+def query_ollama(model: str, conversation: list):
     """Sends a request to Ollama and returns the response using the Python client."""
     try:
-        # Call the Ollama generate method
-        response = ollama.generate(model=model, prompt=prompt).model_dump()
+        # Call the Ollama chat method
+        response = ollama.chat(model=model, messages=conversation).model_dump()
+        print(response)
         
         # Print for debugging
-        print(f"Response received: {response.keys() if hasattr(response, 'keys') else type(response)}")
+        # print(f"Response received: {response.keys() if hasattr(response, 'keys') else type(response)}")
         
         # Return the response text
         if isinstance(response, dict):
-            return response.get('response', 'No response text found')
+            return response['message']['content'] if 'message' in response else str(response)
         else:
             return str(response)
     except Exception as e:
         print(f"Error calling Ollama: {str(e)}")
         return f"Error: {str(e)}"
 
+# Initialize session state for conversation history if not already initialized
+if 'history' not in st.session_state:
+    st.session_state.history = []
+    st.session_state.conv_history = []
+
+# Optional: Add a status indicator for Ollama service
+
+# Try to list available models to check if Ollama is running
+models = ollama.list().model_dump()
+st.sidebar.success("✅ Ollama service is running")
+
+# Display available models
+if isinstance(models, dict) and 'models' in models:
+    model_list = [model['model'] for model in models['models']]
+
 # Streamlit UI
 st.title("Ollama Model Interface")
 
 # Select model
-model_name = st.text_input("Enter model name:", "llama2")
+model_name = st.selectbox("Select a model:", options=model_list)
 
 # User input
 user_input = st.text_area("Enter your prompt:")
+user_chat_input = user_input 
 
 # File uploader
 uploaded_file = st.file_uploader("Upload a file (CSV, TXT, etc.)", type=["csv", "txt", "json"])
 
 # Process uploaded file
 if uploaded_file is not None:
-    file_type = uploaded_file.name.split(".")[-1]
+    # Extract file name and display it without showing the raw file contents
+    file_name = uploaded_file.name
+    st.write(f"File uploaded: {file_name}")
+    
+    file_type = file_name.split(".")[-1]
     
     # Handle CSV file type
     if file_type == "csv":
         df = pd.read_csv(uploaded_file)
-        st.write("Preview of uploaded CSV:")
-        st.dataframe(df.head())  # Show only the first 5 rows for a preview
         
-        # Option to include CSV data in prompt
+        # Option to include CSV data in the prompt (show a preview if selected)
         if st.checkbox("Include CSV data in prompt"):
-            # Select a subset of data (first 10 rows for example)
-            csv_string = df.head(10).to_string()  # You can change this to any subset you need
+            csv_string = df.to_string()  # You can change this to any subset you need
+            user_chat_input = user_input
             user_input = f"{user_input}\n\nCSV Data:\n{csv_string}"
+
             
     # Handle TXT file type
     elif file_type == "txt":
         text = uploaded_file.read().decode("utf-8")
-        st.write("File Contents:")
-        st.text(text)
         
         # Option to include text file content in prompt
         if st.checkbox("Include text file content in prompt"):
+            user_chat_input = user_input
             user_input = f"{user_input}\n\nFile Content:\n{text}"
             
     # Handle JSON file type
     elif file_type == "json":
         json_data = json.load(uploaded_file)
-        st.json(json_data)
         
         # Option to include JSON data in prompt
         if st.checkbox("Include JSON data in prompt"):
             json_string = json.dumps(json_data, indent=2)
+            user_chat_input = user_input
             user_input = f"{user_input}\n\nJSON Data:\n{json_string}"
 
-# Generate button
-if st.button("Generate Response"):
+# Handle chat submission
+if st.button("Generate Conversation"):
     if user_input.strip():
-        with st.spinner("Generating response..."):
-            print(f"Querying model '{model_name}' with prompt: {user_input[:100]}...")  # Log the first part of the prompt
-            output = query_ollama(model_name, user_input)
+        # Append the user's message to the conversation history
+        st.session_state.history.append({"role": "user", "message": user_input})
+        st.session_state.conv_history.append({"role": "user", "message": user_chat_input})
         
-        st.subheader("Response:")
-        st.write(output)
+        # Prepare the conversation format for the chat method
+        messages = [{"role": "user", "content": entry['message']} for entry in st.session_state.history]
+        
+        with st.spinner("Generating response..."):
+            # Get the model's response using the chat-based query
+            output = query_ollama(model_name, messages)
+            
+        # Append the model's response to the conversation history
+        st.session_state.history.append({"role": "model", "message": output})
+        st.session_state.conv_history.append({"role": "model", "message": output})
+        
+        # Display the conversation history
+        st.subheader("Conversation:")
+        for entry in st.session_state.conv_history:
+            if entry["role"] == "user":
+                st.markdown(f"**You**: {entry['message']}")
+            else:
+                st.markdown(f"**Model**: {entry['message']}")
     else:
-        st.warning("Please enter a prompt.")
-
-# Optional: Add a status indicator for Ollama service
-try:
-    # Try to list available models to check if Ollama is running
-    models = ollama.list()
-    st.sidebar.success("✅ Ollama service is running")
-    
-    # Display available models
-    if isinstance(models, dict) and 'models' in models:
-        model_list = [model['name'] for model in models['models']]
-        st.sidebar.write("Available models:")
-        st.sidebar.write(", ".join(model_list))
-except Exception as e:
-    st.sidebar.error(f"❌ Ollama service not available: {str(e)}")
-    st.sidebar.info("Make sure Ollama is running on your system.")
+        st.warning("Please enter a message.")
